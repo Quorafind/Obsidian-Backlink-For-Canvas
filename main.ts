@@ -9,7 +9,7 @@ import {
 	Workspace,
 	WorkspaceLeaf
 } from 'obsidian';
-import { around } from "monkey-around";
+import {around} from "monkey-around";
 
 declare module 'obsidian' {
 	interface MetadataCache {
@@ -60,6 +60,49 @@ const getBaseName = (path: string) => {
 	return path.replace('.md', '');
 };
 
+const findMarkdownLinks = (text: string): string[] => {
+	const regex = /\[([^\]]+)\]\(([^)]+)\)|\[\[([^\]]+)\]\]/g;
+	const matches = [];
+	let match;
+
+	while ((match = regex.exec(text)) !== null) {
+		if (match[1] && match[2]) {
+			// Matches [text](link)
+			matches.push(match[2]);
+		} else if (match[3]) {
+			// Matches [[link]]
+			matches.push(match[3]);
+		}
+	}
+	return matches;
+}
+
+const textLinkToFileLink = (Nodes: Array<any>) => {
+	let result = [];
+
+	for (const node of Nodes) {
+		if (node.type !== "text") continue;
+		const links = findMarkdownLinks(node.text);
+		if (links.length === 0) continue;
+		let total = 0;
+		// create a fake file node
+		for (const link of links) {
+			if (link.startsWith("http") || link.startsWith("www.")) continue;
+			total++;
+			const final_id = total > 1 ? `${node.id}${total}` : node.id;
+			result.push({
+				type: "file",
+				file: link,
+				id: final_id,
+				x: node.x,
+				y: node.y,
+				width: node.width,
+				height: node.height
+			});
+		}
+	}
+	return result
+}
 export default class MyPlugin extends Plugin {
 	linkCountMap: {
 		[key: string]: {
@@ -156,7 +199,11 @@ export default class MyPlugin extends Plugin {
 				[key: string]: number
 			} = {};
 
-			const fileNodes = nodes.filter((node: { type: string; }) => node.type === "file");
+			const fileNodes = [
+				...nodes.filter((node: any) => node.type === "file"),
+				...textLinkToFileLink(nodes),
+			];
+
 			for (const node of fileNodes) {
 				const link = getBaseName(node.file) || node.file;
 				const original = `[[${link}]]`;
@@ -208,7 +255,10 @@ export default class MyPlugin extends Plugin {
 			[key: string]: number
 		} = {};
 
-		const fileNodes = nodes.filter((node: { type: string; }) => node.type === "file");
+		const fileNodes = [
+			...nodes.filter((node: any) => node.type === "file"),
+			...textLinkToFileLink(nodes),
+		];
 		for (const node of fileNodes) {
 			const link = getBaseName(node.file) || node.file;
 			const original = `[[${link}]]`;
@@ -252,7 +302,10 @@ export default class MyPlugin extends Plugin {
 			const nodes = JSON.parse(fileContent)?.nodes;
 			if (!nodes || nodes.length === 0) continue;
 
-			const fileNodes = nodes.filter((node: { type: string; }) => node.type === "file");
+			const fileNodes = [
+				...nodes.filter((node: any) => node.type === "file"),
+				...textLinkToFileLink(nodes),
+			];
 			if (fileNodes.length === 0) continue;
 
 			const hash = await makeid(file.path);
